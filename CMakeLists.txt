@@ -54,3 +54,6 @@ target_link_libraries(line mv)
 add_executable(pagerank ${PROJECT_SOURCE_DIR}/src/samples/PageRank.c)
 
 target_link_libraries(pagerank mv)
+add_executable(bicg_noprecondition ${PROJECT_SOURCE_DIR}/src/samples/bicg_noprecondition.c)
+
+target_link_libraries(bicg_noprecondition mv)
