@@ -2,6 +2,7 @@
 // Created by kouushou on 2020/12/6.
 //
 #include <spmv.h>
+#include <string.h>
 #define LINE_S_PRODUCT_PARAMETERS_IN const float*Val,const BASIC_INT_TYPE* indx, const float *Vector_X,float *Vector_Y
 #define LINE_D_PRODUCT_PARAMETERS_IN const double*Val,const BASIC_INT_TYPE* indx, const double *Vector_X,double *Vector_Y
 #define LINE_PRODUCT_PARAMETERS_CALL(banner) Val+(banner),indx+(banner),Vector_X,Vector_Y+(banner)
@@ -37,16 +38,13 @@ void basic_s_lineProduct_4_avx2(const float*Val, const BASIC_INT_TYPE* indx, con
 void basic_s_lineProduct_8_avx2(const float*Val, const BASIC_INT_TYPE* indx, const float *Vector_X, float *Vector_Y){
 #ifdef DOT_AVX2_CAN
 
-    __m256 vecv = _mm256_loadu_ps(&Val[0]);
 
-    __m256i veci = _mm256_loadu_si256((__m256i *) (&indx[0]));
-    __m256 vecx = _mm256_i32gather_ps(Vector_X, veci, sizeof(Vector_X[0]));
+    //__m256 vecx = _mm256_i32gather_ps(Vector_X, *((__m256i*)indx), sizeof(Vector_X[0]));
 
-    __m256 vecY = _mm256_loadu_ps(&Vector_Y[0]);
+    *(__m256_u *) (Vector_Y ) = _mm256_fmadd_ps(*(__m256_u *)(Val),
+                                                _mm256_i32gather_ps(Vector_X, *((__m256i*)indx), sizeof(Vector_X[0])),
+                                                *(__m256_u *) (Vector_Y ));
 
-    vecY = _mm256_fmadd_ps(vecv,vecx,vecY);
-
-    _mm256_store_ps(Vector_Y,vecY);
 
 #else
     basic_s_lineProduct_8(Val,indx,Vector_X,Vector_Y);
@@ -113,21 +111,22 @@ void basic_d_lineProduct_16(const double*Val, const BASIC_INT_TYPE* indx, const 
         Vector_Y[ri] += Val[ri]*Vector_X[indx[ri]];
     }
 }
-
-#include <string.h>
+#include <stdio.h>
 void basic_d_lineProduct_4_avx2(const double*Val, const BASIC_INT_TYPE* indx, const double *Vector_X, double *Vector_Y){
 #ifdef DOT_AVX2_CAN
-    __m256d vecv = _mm256_load_pd(&Val[0]);
+      //__m256d vecv = _mm256_loadu_pd(&Val[0]);
 
-    __m256i veci = _mm256_loadu_si256((__m256i *) (&indx[0]));
-    __m128i vec128i = _mm256_castsi256_si128(veci);
-    __m256d vecx = _mm256_i32gather_pd(Vector_X, vec128i, sizeof(Vector_X[0]));
+       //__m256i veci = _mm256_loadu_si256((__m256i_u*)indx);
+       //__m128i vec128i = _mm256_castsi256_si128(*(__m256i_u *) (indx));
+       //__m256d vecx =_mm256_i32gather_pd(Vector_X, _mm256_castsi256_si128(*(__m256i_u *) (indx)), sizeof(Vector_X[0]));
 
-    __m256d vecY = _mm256_load_pd(&Vector_Y[0]);
+       //__m256d vecY = _mm256_load_pd(&Vector_Y[0]);
+        *(__m256d_u *) (Vector_Y )  = _mm256_fmadd_pd(
+               *(__m256d_u*)(Val),
+               _mm256_i32gather_pd(Vector_X, _mm256_castsi256_si128(*(__m256i_u *) (indx)), sizeof(Vector_X[0])),
+               *(__m256d_u *) (Vector_Y ));
 
-    vecY = _mm256_fmadd_pd(vecv,vecx,vecY);
-
-    _mm256_store_pd(Vector_Y,vecY);
+       //_mm256_store_pd(Vector_Y,vecY);
 
 #else
     basic_d_lineProduct_4(Val,indx,Vector_X,Vector_Y);
@@ -362,6 +361,55 @@ gather_function inner_basic_GetGather(BASIC_SIZE_TYPE types){
         }break;
         case sizeof(float ):{
             return basic_s_gather;
+        }break;
+        default:{
+            return NULL;
+        }break;
+    }
+}
+
+
+
+void basic_s_pack_lineProduct(BASIC_INT_TYPE pack_size,BASIC_INT_TYPE length, const float *Val, const BASIC_INT_TYPE* indx,
+                              const float *Vector_X, float *Vector_Y, VECTORIZED_WAY dotProductWay) {
+
+    for (int i = 0; i < pack_size; ++i) {
+        basic_s_lineProduct(length, Val + i * length, indx + i * length, Vector_X, Vector_Y, dotProductWay);
+    }
+}
+
+
+void basic_d_pack_lineProduct(BASIC_INT_TYPE pack_size,BASIC_INT_TYPE length, const double *Val, const BASIC_INT_TYPE* indx,
+                              const double *Vector_X, double *Vector_Y, VECTORIZED_WAY dotProductWay) {
+
+    for (int i = 0; i < pack_size; ++i) {
+        basic_d_lineProduct(length, Val + i * length, indx + i * length, Vector_X, Vector_Y, dotProductWay);
+    }
+}
+
+
+void PackLine_Product_s_Selected(BASIC_INT_TYPE pack_size,
+        BASIC_INT_TYPE length, const void*Val, const BASIC_INT_TYPE* indx,
+        const void *Vector_X, void *Vector_Y, VECTORIZED_WAY dotProductWay
+){
+    basic_s_pack_lineProduct(pack_size,length, CONVERT_FLOAT_T(Val), indx,
+                        CONVERT_FLOAT_T(Vector_X), CONVERT_FLOAT_T(Vector_Y), dotProductWay);
+}
+void PackLine_Product_d_Selected(BASIC_INT_TYPE pack_size,
+        BASIC_INT_TYPE length, const void*Val, const BASIC_INT_TYPE* indx,
+        const void *Vector_X, void *Vector_Y, VECTORIZED_WAY dotProductWay
+){
+    basic_d_pack_lineProduct(pack_size,length, CONVERT_DOUBLE_T(Val), indx,
+                        CONVERT_DOUBLE_T(Vector_X), CONVERT_DOUBLE_T(Vector_Y), dotProductWay);
+}
+
+packLine_product_function inner_basic_GetPackLineProduct(BASIC_SIZE_TYPE types){
+    switch (types) {
+        case sizeof(double ):{
+            return PackLine_Product_d_Selected;
+        }break;
+        case sizeof(float ):{
+            return PackLine_Product_s_Selected;
         }break;
         default:{
             return NULL;

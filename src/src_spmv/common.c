@@ -61,16 +61,17 @@ void clear_Sell_C_Sigma(spmv_Handle_t this_handle) {
 void gemv_Handle_init(spmv_Handle_t this_handle){
     this_handle->spmvMethod = Method_Serial;
     this_handle->nthreads = 0;
+    this_handle->cppHandle = NULL;
 
-    init_Balance_Balance2(this_handle);
     init_sell_C_Sigma(this_handle);
+    init_Balance_Balance2(this_handle);
 
 }
 
 void gemv_Handle_clear(spmv_Handle_t this_handle) {
     clear_Balance_Balance2(this_handle);
     clear_Sell_C_Sigma(this_handle);
-
+    free(this_handle->cppHandle);
     gemv_Handle_init(this_handle);
 }
 
@@ -110,11 +111,13 @@ const spmv_function spmv_functions[] = {
         spmv_parallel_Selected,
         spmv_parallel_balanced_Selected,
         spmv_parallel_balanced2_Selected,
-        spmv_sell_C_Sigma_Selected
+        spmv_sell_C_Sigma_Selected,
+        spmv_csr5Spmv_Selected
 };
 
 void spmv_create_handle_all_in_one(spmv_Handle_t *Handle,
                                    BASIC_INT_TYPE m,
+                                   BASIC_INT_TYPE n,
                                    const BASIC_INT_TYPE*RowPtr,
                                    const BASIC_INT_TYPE *ColIdx,
                                    const void *Matrix_Val,
@@ -136,13 +139,17 @@ void spmv_create_handle_all_in_one(spmv_Handle_t *Handle,
             parallel_balanced2_get_handle(*Handle,m,RowPtr,RowPtr[m]-RowPtr[0]);
         }break;
         case Method_SellCSigma:{
-            sell_C_Sigma_get_handle_Selected(*Handle,m/nthreads/8,8,m,RowPtr,ColIdx,Matrix_Val);
+            sell_C_Sigma_get_handle_Selected(*Handle,m/nthreads/512,512,m,RowPtr,ColIdx,Matrix_Val);
+        }
+        case Method_CSR5SPMV:{
+            csr5Spmv_get_handle_Selected(*Handle,m,n,RowPtr,ColIdx,Matrix_Val);
         }
         default:{
 
             return;
         }
     }
+
 }
 
 void spmv(const spmv_Handle_t handle,
@@ -167,7 +174,8 @@ VEC_STRING(Method_Serial),\
 VEC_STRING(Method_Parallel),\
 VEC_STRING(Method_Balanced),\
 VEC_STRING(Method_Balanced2),\
-VEC_STRING(Method_SellCSigma)
+VEC_STRING(Method_SellCSigma),\
+VEC_STRING(Method_Csr5Spmv)
 
 const char * funcNames[]= {
     ALL_FUNC_SRTING
@@ -177,7 +185,8 @@ const char*Methods_names[]={
         SINGLE(Method_Parallel),
         SINGLE(Method_Balanced),
         SINGLE(Method_Balanced2),
-        SINGLE(Method_SellCSigma)
+        SINGLE(Method_SellCSigma),
+        SINGLE(Method_Csr5Spmv)
 };
 const char*Vectorized_names[]={
         SINGLE(VECTOR_NONE),
